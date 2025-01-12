@@ -13,6 +13,7 @@ service BookService {
   rpc DeleteBook (DeleteBookRequest) returns (DeleteBookResponse);
   rpc BorrowBook (BorrowBookRequest) returns (BorrowBookResponse);
   rpc ReturnBook (ReturnBookRequest) returns (ReturnBookResponse);
+  rpc Login (LoginRequest) returns (LoginResponse);
 }
 
 message User {
@@ -100,4 +101,14 @@ message ReturnBookRequest {
 
 message ReturnBookResponse {
   BorrowedBook borrowed_book = 1;
+}
+
+message LoginRequest {
+  string username = 1;
+  string password = 2;
+}
+
+message LoginResponse {
+  string token = 1;
+  User user = 2;
 }

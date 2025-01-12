@@ -8,70 +8,21 @@ import (
 	"os"
 	"strings"
 
-	"gc-buku/models"
 	pb "gc-buku/proto"
+	"gc-buku/scheduler"
+	"gc-buku/services"
 
-	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 type server struct {
 	pb.UnimplementedBookServiceServer
-	db *mongo.Database
-}
-
-func (s *server) CreateUser(ctx context.Context, req *pb.CreateUserRequest) (*pb.CreateUserResponse, error) {
-	userCollection := s.db.Collection("users")
-	user := models.User{
-		Username: req.User.Username,
-		Password: req.User.Password,
-	}
-
-	result, err := userCollection.InsertOne(ctx, user)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to create user: %v", err)
-	}
-
-	objectID := result.InsertedID.(primitive.ObjectID)
-
-	return &pb.CreateUserResponse{
-		User: &pb.User{
-			Id:       objectID.Hex(),
-			Username: user.Username,
-			Password: user.Password,
-		},
-	}, nil
-}
-
-func (s *server) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.GetUserResponse, error) {
-	userCollection := s.db.Collection("users")
-	var user models.User
-
-	objectID, err := primitive.ObjectIDFromHex(req.Id)
-	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid user ID: %v", err)
-	}
-
-	err = userCollection.FindOne(ctx, bson.M{"_id": objectID}).Decode(&user)
-	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return nil, status.Errorf(codes.NotFound, "user not found")
-		}
-		return nil, status.Errorf(codes.Internal, "failed to fetch user: %v", err)
-	}
-
-	return &pb.GetUserResponse{
-		User: &pb.User{
-			Id:       user.ID.Hex(),
-			Username: user.Username,
-			Password: user.Password,
-		},
-	}, nil
+	userService   *services.UserService
+	bookService   *services.BookService
+	borrowService *services.BorrowService
+	bookScheduler *scheduler.BookScheduler
 }
 
 func initDB(mongoURI, dbName string) (*mongo.Database, error) {
@@ -111,13 +62,25 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
+	// Initialize services
+	srv := &server{
+		userService:   services.NewUserService(db),
+		bookService:   services.NewBookService(db),
+		borrowService: services.NewBorrowService(db),
+		bookScheduler: scheduler.NewBookScheduler(db),
+	}
+
+	// Start scheduler
+	srv.bookScheduler.Start()
+
+	// Start gRPC server
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 
 	s := grpc.NewServer()
-	pb.RegisterBookServiceServer(s, &server{db: db})
+	pb.RegisterBookServiceServer(s, srv)
 
 	log.Printf("gRPC Server listening on :50051")
 	if err := s.Serve(lis); err != nil {
