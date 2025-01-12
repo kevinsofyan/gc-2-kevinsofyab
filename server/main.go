@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	pb "gc-buku/proto"
-	"gc-buku/scheduler"
 	"gc-buku/services"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -22,7 +21,42 @@ type server struct {
 	userService   *services.UserService
 	bookService   *services.BookService
 	borrowService *services.BorrowService
-	bookScheduler *scheduler.BookScheduler
+}
+
+func (s *server) CreateUser(ctx context.Context, req *pb.CreateUserRequest) (*pb.CreateUserResponse, error) {
+	return s.userService.CreateUser(ctx, req)
+}
+
+func (s *server) GetUser(ctx context.Context, req *pb.GetUserRequest) (*pb.GetUserResponse, error) {
+	return s.userService.GetUser(ctx, req)
+}
+
+func (s *server) Login(ctx context.Context, req *pb.LoginRequest) (*pb.LoginResponse, error) {
+	return s.userService.Login(ctx, req)
+}
+
+func (s *server) CreateBook(ctx context.Context, req *pb.CreateBookRequest) (*pb.CreateBookResponse, error) {
+	return s.bookService.CreateBook(ctx, req)
+}
+
+func (s *server) GetBook(ctx context.Context, req *pb.GetBookRequest) (*pb.GetBookResponse, error) {
+	return s.bookService.GetBook(ctx, req)
+}
+
+func (s *server) UpdateBook(ctx context.Context, req *pb.UpdateBookRequest) (*pb.UpdateBookResponse, error) {
+	return s.bookService.UpdateBook(ctx, req)
+}
+
+func (s *server) DeleteBook(ctx context.Context, req *pb.DeleteBookRequest) (*pb.DeleteBookResponse, error) {
+	return s.bookService.DeleteBook(ctx, req)
+}
+
+func (s *server) BorrowBook(ctx context.Context, req *pb.BorrowBookRequest) (*pb.BorrowBookResponse, error) {
+	return s.borrowService.BorrowBook(ctx, req)
+}
+
+func (s *server) ReturnBook(ctx context.Context, req *pb.ReturnBookRequest) (*pb.ReturnBookResponse, error) {
+	return s.borrowService.ReturnBook(ctx, req)
 }
 
 func initDB(mongoURI, dbName string) (*mongo.Database, error) {
@@ -55,25 +89,26 @@ func initDB(mongoURI, dbName string) (*mongo.Database, error) {
 
 func main() {
 	mongoURI := os.Getenv("MONGO_URI")
+	if mongoURI == "" {
+		mongoURI = "mongodb://localhost:27017"
+	}
+
 	dbName := os.Getenv("DB_NAME")
+	if dbName == "" {
+		dbName = "book_management"
+	}
 
 	db, err := initDB(mongoURI, dbName)
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
-	// Initialize services
 	srv := &server{
 		userService:   services.NewUserService(db),
 		bookService:   services.NewBookService(db),
 		borrowService: services.NewBorrowService(db),
-		bookScheduler: scheduler.NewBookScheduler(db),
 	}
 
-	// Start scheduler
-	srv.bookScheduler.Start()
-
-	// Start gRPC server
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
